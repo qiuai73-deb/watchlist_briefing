@@ -1,0 +1,47 @@
+name: A股盘前持仓简报
+
+on:
+  schedule:
+    - cron: '30 0 * * 1-5'   # UTC 0:30 = 北京时间 08:30，周一至周五
+  workflow_dispatch:          # 手动触发（Actions 页面 Run workflow）
+
+permissions:
+  contents: write
+  models: read               # 启用 GitHub Models（免 key 方案需要）
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install requests chinese_calendar
+
+      - name: Fetch data
+        run: python fetch.py
+
+      - name: Generate brief
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}   # 留空则用 GitHub Models 免 key
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python generate.py
+
+      - name: Send to Feishu
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}   # 飞书群机器人 webhook（必填）
+          FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}     # 加签密钥（可选）
+        run: python notify.py
+
+      - name: Commit & push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add briefs/
+          git commit -m "brief $(date +%F)" || echo "no change"
+          git push
