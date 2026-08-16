@@ -52,18 +52,36 @@ def market_prefix(code: str) -> str:
 
 
 def parse_watchlist(path: Path):
+    """解析 watchlist.md 中的自选股表格。
+
+    兼容两种写法：
+      - 完整 5 列：| # | 代码 | 名称 | 行业 | 核心标签 |
+      - 极简 2 列：| 代码 | 名称 |   （后两列留空，流程照常跑）
+    只要求「6 位代码 + 名称」两列齐全即可识别，行业/标签改为可选。
+    """
     stocks = []
     text = path.read_text(encoding="utf-8")
     for line in text.splitlines():
-        m = re.match(
-            r"\|\s*(\d+)\s*\|\s*(\d{6})\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|",
-            line,
-        )
-        if m:
-            stocks.append({
-                "idx": m.group(1), "code": m.group(2), "name": m.group(3).strip(),
-                "industry": m.group(4).strip(), "tags": m.group(5).strip(),
-            })
+        s = line.strip()
+        if not s.startswith("|"):
+            continue
+        # 跳过分隔行（| --- | --- |）
+        if set(s) <= set("|-: "):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        # 找出 6 位数字所在列作为代码列
+        code_i = next((i for i, c in enumerate(cells) if re.fullmatch(r"\d{6}", c)), None)
+        if code_i is None or code_i + 1 >= len(cells):
+            continue  # 缺少 代码 或 名称，跳过
+        code = cells[code_i]
+        name = cells[code_i + 1]
+        industry = cells[code_i + 2] if code_i + 2 < len(cells) else ""
+        tags = cells[code_i + 3] if code_i + 3 < len(cells) else ""
+        stocks.append({
+            "idx": cells[0] if (code_i > 0 and cells[0].isdigit()) else str(len(stocks) + 1),
+            "code": code, "name": name,
+            "industry": industry, "tags": tags,
+        })
     return stocks
 
 
